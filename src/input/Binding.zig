@@ -1087,11 +1087,14 @@ pub const Action = union(enum) {
         pub const copy: WriteScreen = .{ .action = .copy, .emit = .plain };
         pub const paste: WriteScreen = .{ .action = .paste, .emit = .plain };
         pub const open: WriteScreen = .{ .action = .open, .emit = .plain };
+        pub const edit: WriteScreen = .{ .action = .edit, .emit = .plain };
 
         pub const Action = enum {
             copy,
             paste,
             open,
+            /// Open the file in $EDITOR inside the current terminal.
+            edit,
         };
 
         pub const Format = enum {

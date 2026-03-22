@@ -5981,6 +5981,22 @@ fn writeScreenFile(
             self.alloc,
             path,
         ), .unlocked),
+        .edit => {
+            // Build a command that opens the file in $EDITOR at the last
+            // line, similar to kitty's scrollback_pager. Falls back to
+            // "vi" if $EDITOR is not set.
+            const editor = std.posix.getenv("EDITOR") orelse "vi";
+            const cmd = try std.fmt.allocPrint(
+                self.alloc,
+                "{s} +$ {s}\n",
+                .{ editor, path },
+            );
+            defer self.alloc.free(cmd);
+            self.queueIo(try termio.Message.writeReq(
+                self.alloc,
+                cmd,
+            ), .unlocked);
+        },
     }
 }
 
