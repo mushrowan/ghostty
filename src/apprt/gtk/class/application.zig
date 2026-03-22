@@ -2012,14 +2012,27 @@ const Action = struct {
                     return false;
                 };
 
-                return tree.goto(switch (to) {
+                // For left/right, use non-wrapping spatial navigation
+                // so we can fall back to tab switching at the edges
+                const result = tree.goto(switch (to) {
                     .previous => .previous_wrapped,
                     .next => .next_wrapped,
                     .up => .{ .spatial = .up },
                     .down => .{ .spatial = .down },
-                    .left => .{ .spatial = .left },
-                    .right => .{ .spatial = .right },
+                    .left => .{ .spatial_no_wrap = .left },
+                    .right => .{ .spatial_no_wrap = .right },
                 });
+
+                // If no split was found, fall back to tab navigation
+                if (!result) {
+                    return switch (to) {
+                        .left => gotoTab(target, .previous),
+                        .right => gotoTab(target, .next),
+                        else => false,
+                    };
+                }
+
+                return result;
             },
         }
     }

@@ -244,6 +244,10 @@ pub fn SplitTree(comptime V: type) type {
             /// based on the nearest surface in the given direction visually
             /// as the surfaces are laid out on a 2D grid.
             spatial: Spatial.Direction,
+
+            /// Same as spatial but does not wrap around. Returns null
+            /// if there is no surface in the given direction.
+            spatial_no_wrap: Spatial.Direction,
         };
 
         /// Goto a view from a certain point in the split tree. Returns null
@@ -262,10 +266,14 @@ pub fn SplitTree(comptime V: type) type {
                 .previous_wrapped => self.previous(from) orelse self.deepest(.right, .root),
                 .next_wrapped => self.next(from) orelse self.deepest(.left, .root),
                 .spatial => |d| spatial: {
-                    // Get our spatial representation.
                     var sp = try self.spatial(alloc);
                     defer sp.deinit(alloc);
                     break :spatial self.nearestWrapped(sp, from, d);
+                },
+                .spatial_no_wrap => |d| spatial_no_wrap: {
+                    var sp = try self.spatial(alloc);
+                    defer sp.deinit(alloc);
+                    break :spatial_no_wrap self.nearest(sp, from, d, sp.slots[from.idx()]);
                 },
             };
         }
