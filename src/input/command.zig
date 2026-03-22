@@ -506,6 +506,39 @@ fn actionCommands(action: Action.Key) []const Command {
             },
         },
 
+        .swap_split => comptime &.{
+            .{
+                .action = .{ .swap_split = .previous },
+                .title = "Swap Split: Previous",
+                .description = "Swap with the previous split, if any.",
+            },
+            .{
+                .action = .{ .swap_split = .next },
+                .title = "Swap Split: Next",
+                .description = "Swap with the next split, if any.",
+            },
+            .{
+                .action = .{ .swap_split = .left },
+                .title = "Swap Split: Left",
+                .description = "Swap with the split to the left, if it exists.",
+            },
+            .{
+                .action = .{ .swap_split = .right },
+                .title = "Swap Split: Right",
+                .description = "Swap with the split to the right, if it exists.",
+            },
+            .{
+                .action = .{ .swap_split = .up },
+                .title = "Swap Split: Up",
+                .description = "Swap with the split above, if it exists.",
+            },
+            .{
+                .action = .{ .swap_split = .down },
+                .title = "Swap Split: Down",
+                .description = "Swap with the split below, if it exists.",
+            },
+        },
+
         .goto_window => comptime &.{
             .{
                 .action = .{ .goto_window = .previous },

@@ -753,6 +753,46 @@ pub fn SplitTree(comptime V: type) type {
             assert(reffed == nodes.len - 1);
         }
 
+        /// Swap two leaf nodes in the tree, returning a new tree with
+        /// the views at the two given handles exchanged. Both handles
+        /// must refer to leaf nodes. If the handles are equal this
+        /// returns a clone with no changes.
+        pub fn swap(
+            self: *const Self,
+            gpa: Allocator,
+            handle_a: Node.Handle,
+            handle_b: Node.Handle,
+        ) Allocator.Error!Self {
+            if (self.isEmpty()) return .empty;
+
+            assert(handle_a.idx() < self.nodes.len);
+            assert(handle_b.idx() < self.nodes.len);
+            assert(self.nodes[handle_a.idx()] == .leaf);
+            assert(self.nodes[handle_b.idx()] == .leaf);
+
+            // Create a new arena allocator for the clone.
+            var arena = ArenaAllocator.init(gpa);
+            errdefer arena.deinit();
+            const alloc = arena.allocator();
+
+            // Allocate a new nodes array and copy the existing nodes into it.
+            const nodes = try alloc.dupe(Node, self.nodes);
+
+            // Swap the two leaf views.
+            const tmp = nodes[handle_a.idx()];
+            nodes[handle_a.idx()] = nodes[handle_b.idx()];
+            nodes[handle_b.idx()] = tmp;
+
+            // Increase the reference count of all the views in the nodes.
+            try refNodes(gpa, nodes);
+
+            return .{
+                .arena = arena,
+                .nodes = nodes,
+                .zoomed = self.zoomed,
+            };
+        }
+
         /// Equalize this node and all its children, returning a new node with splits
         /// adjusted so that each split's ratio is based on the relative weight
         /// (number of leaves) of its children.
@@ -2364,4 +2404,86 @@ test "SplitTree: remove and zoom" {
             \\
         );
     }
+}
+
+test "SplitTree: swap two leaves" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+
+    // A | B horizontal
+    var split = try t1.split(
+        alloc,
+        .root,
+        .right,
+        0.5,
+        &t2,
+    );
+    defer split.deinit();
+
+    // Find handles for A and B
+    var handle_a: TestTree.Node.Handle = undefined;
+    var handle_b: TestTree.Node.Handle = undefined;
+    {
+        var it = split.iterator();
+        while (it.next()) |entry| {
+            if (std.mem.eql(u8, entry.view.label, "A")) handle_a = entry.handle;
+            if (std.mem.eql(u8, entry.view.label, "B")) handle_b = entry.handle;
+        }
+    }
+
+    // Swap A and B
+    var swapped = try split.swap(alloc, handle_a, handle_b);
+    defer swapped.deinit();
+
+    // After swap, position of A should have B and vice versa
+    try testing.expectEqualStrings(swapped.nodes[handle_a.idx()].leaf.label, "B");
+    try testing.expectEqualStrings(swapped.nodes[handle_b.idx()].leaf.label, "A");
+}
+
+test "SplitTree: swap preserves zoom" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+
+    // A | B horizontal
+    var split = try t1.split(
+        alloc,
+        .root,
+        .right,
+        0.5,
+        &t2,
+    );
+    defer split.deinit();
+
+    // Find handle for A and zoom it
+    var handle_a: TestTree.Node.Handle = undefined;
+    var handle_b: TestTree.Node.Handle = undefined;
+    {
+        var it = split.iterator();
+        while (it.next()) |entry| {
+            if (std.mem.eql(u8, entry.view.label, "A")) handle_a = entry.handle;
+            if (std.mem.eql(u8, entry.view.label, "B")) handle_b = entry.handle;
+        }
+    }
+    split.zoom(handle_a);
+    try testing.expect(split.zoomed != null);
+
+    // Swap should preserve zoom state
+    var swapped = try split.swap(alloc, handle_a, handle_b);
+    defer swapped.deinit();
+    try testing.expect(swapped.zoomed != null);
+    try testing.expectEqual(swapped.zoomed.?, handle_a);
 }

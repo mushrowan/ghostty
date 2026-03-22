@@ -379,6 +379,43 @@ pub const SplitTree = extern struct {
         return true;
     }
 
+    /// Swap the active split with the one in the given direction.
+    /// Focus follows the originally active view.
+    pub fn swapSplit(self: *Self, to: Surface.Tree.Goto) bool {
+        const old_tree = self.getTree() orelse return false;
+        const active = self.getActiveSurfaceHandle() orelse return false;
+        const target = if (old_tree.goto(
+            Application.default().allocator(),
+            active,
+            to,
+        )) |handle_|
+            handle_ orelse return false
+        else |err| switch (err) {
+            error.OutOfMemory => return false,
+        };
+
+        // Nothing to swap with ourselves
+        if (active == target) return false;
+
+        // Perform the swap, producing a new immutable tree
+        var new_tree = old_tree.swap(
+            Application.default().allocator(),
+            active,
+            target,
+        ) catch |err| {
+            log.warn("unable to swap splits: {}", .{err});
+            return false;
+        };
+        defer new_tree.deinit();
+        self.setTree(&new_tree);
+
+        // Focus follows our view, which is now at the target handle
+        const surface = new_tree.nodes[target.idx()].leaf;
+        surface.grabFocus();
+
+        return true;
+    }
+
     fn disconnectSurfaceHandlers(self: *Self) void {
         const tree = self.getTree() orelse return;
         var it = tree.iterator();
