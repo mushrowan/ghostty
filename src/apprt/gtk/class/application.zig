@@ -2544,12 +2544,7 @@ const Action = struct {
                         .right => .right,
                     },
                     value.amount,
-                ) catch |err| switch (err) {
-                    error.OutOfMemory => {
-                        log.warn("unable to resize split, out of memory", .{});
-                        return false;
-                    },
-                };
+                );
             },
         }
     }

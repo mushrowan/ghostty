@@ -2,6 +2,7 @@ const std = @import("std");
 const assert = @import("../../../quirks.zig").inlineAssert;
 const Allocator = std.mem.Allocator;
 const adw = @import("adw");
+const gdk = @import("gdk");
 const gio = @import("gio");
 const glib = @import("glib");
 const gobject = @import("gobject");
@@ -281,45 +282,51 @@ pub const SplitTree = extern struct {
         self: *Self,
         direction: Surface.Tree.Split.Direction,
         amount: u16,
-    ) Allocator.Error!bool {
-        // Avoid useless work
+    ) bool {
         if (amount == 0) return false;
+        if (!self.getIsSplit()) return false;
 
-        const old_tree = self.getTree() orelse return false;
-        const active = self.getActiveSurfaceHandle() orelse return false;
-
-        // Get all our dimensions we're going to need to turn our
-        // amount into a percentage.
-        const priv = self.private();
-        const width = priv.tree_bin.as(gtk.Widget).getWidth();
-        const height = priv.tree_bin.as(gtk.Widget).getHeight();
-        if (width == 0 or height == 0) return false;
-        const width_f64: f64 = @floatFromInt(width);
-        const height_f64: f64 = @floatFromInt(height);
-        const amount_f64: f64 = @floatFromInt(amount);
-
-        // Get our ratio and use positive/neg for directions.
-        const ratio: f64 = switch (direction) {
-            .right => amount_f64 / width_f64,
-            .left => -(amount_f64 / width_f64),
-            .down => amount_f64 / height_f64,
-            .up => -(amount_f64 / height_f64),
-        };
-
-        const layout: Surface.Tree.Split.Layout = switch (direction) {
+        const surface = self.getActiveSurface() orelse return false;
+        const orientation: gtk.Orientation = switch (direction) {
             .left, .right => .horizontal,
             .up, .down => .vertical,
         };
 
-        var new_tree = try old_tree.resize(
-            Application.default().allocator(),
-            active,
-            layout,
-            @floatCast(ratio),
-        );
-        defer new_tree.deinit();
-        self.setTree(&new_tree);
+        // Walk up from the focused surface to find the nearest
+        // SplitTreeSplit with matching orientation, then animate
+        // its paned to the new position. This avoids cloning the
+        // tree and rebuilding the widget hierarchy.
+        const split_widget = findNearestSplit(surface.as(gtk.Widget), orientation) orelse return false;
+        const paned = split_widget.private().paned;
+
+        // If an animation is already running, accumulate from its
+        // target so held-down keys feel responsive.
+        const priv = split_widget.private();
+        const base: c_int = if (priv.tick_id != 0)
+            priv.anim_target
+        else
+            paned.getPosition();
+
+        const delta: c_int = switch (direction) {
+            .right, .down => @intCast(amount),
+            .left, .up => -@as(c_int, @intCast(amount)),
+        };
+        split_widget.animateTo(@max(base + delta, 0));
         return true;
+    }
+
+    /// Walk up the widget tree from `from` to find the nearest
+    /// SplitTreeSplit whose paned matches the given orientation.
+    fn findNearestSplit(from: *gtk.Widget, orientation: gtk.Orientation) ?*SplitTreeSplit {
+        var widget = from.getParent();
+        while (widget) |w| : (widget = w.getParent()) {
+            if (gobject.ext.cast(SplitTreeSplit, w)) |split_widget| {
+                const paned = split_widget.private().paned;
+                if (paned.as(gtk.Orientable).getOrientation() == orientation)
+                    return split_widget;
+            }
+        }
+        return null;
     }
 
     /// Move focus from the currently focused surface to the given
@@ -1081,6 +1088,11 @@ const SplitTreeSplit = extern struct {
         /// Source to handle repositioning the split when properties change.
         idle: ?c_uint = null,
 
+        /// Tick callback for animated resize. Non-zero when running.
+        tick_id: c_uint = 0,
+        /// Target paned position for the current animation.
+        anim_target: c_int = 0,
+
         // Template bindings
         paned: *gtk.Paned,
 
@@ -1118,6 +1130,50 @@ const SplitTreeSplit = extern struct {
 
     fn init(self: *Self, _: *Class) callconv(.c) void {
         gtk.Widget.initTemplate(self.as(gtk.Widget));
+    }
+
+    /// Smoothly animate the paned position toward `target`.
+    /// Repeated calls update the target, reusing the running animation.
+    fn animateTo(self: *Self, target: c_int) void {
+        const priv = self.private();
+        priv.anim_target = target;
+        if (priv.tick_id == 0) {
+            priv.tick_id = self.as(gtk.Widget).addTickCallback(
+                &animTick,
+                null,
+                null,
+            );
+        }
+    }
+
+    fn animTick(
+        widget: *gtk.Widget,
+        _: *gdk.FrameClock,
+        _: ?*anyopaque,
+    ) callconv(.c) c_int {
+        const self = gobject.ext.cast(SplitTreeSplit, widget) orelse return 0;
+        const priv = self.private();
+        const paned = priv.paned;
+        const current: f64 = @floatFromInt(paned.getPosition());
+        const target: f64 = @floatFromInt(priv.anim_target);
+        const diff = target - current;
+
+        // Snap when close enough (< 1 pixel)
+        if (@abs(diff) < 1.0) {
+            paned.setPosition(priv.anim_target);
+            priv.tick_id = 0;
+            return 0; // remove callback
+        }
+
+        // Exponential ease-out: cover 35% of remaining distance per frame
+        const step: c_int = @intFromFloat(@trunc(diff * 0.35));
+        // Ensure at least 1px of movement to avoid stalling
+        const clamped = if (step == 0)
+            (if (diff > 0) @as(c_int, 1) else @as(c_int, -1))
+        else
+            step;
+        paned.setPosition(paned.getPosition() + clamped);
+        return 1; // keep running
     }
 
     fn refresh(self: *Self) void {
@@ -1266,6 +1322,10 @@ const SplitTreeSplit = extern struct {
                 log.warn("unable to remove idle source", .{});
             }
             priv.idle = null;
+        }
+        if (priv.tick_id != 0) {
+            self.as(gtk.Widget).removeTickCallback(priv.tick_id);
+            priv.tick_id = 0;
         }
 
         gtk.Widget.disposeTemplate(
