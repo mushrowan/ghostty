@@ -256,12 +256,16 @@ pub const Window = extern struct {
         /// setup by `setup-menu`.
         context_menu_page: ?*adw.TabPage = null,
 
+        /// Timer source for updating the clock label when fullscreened.
+        clock_timer: c_uint = 0,
+
         // Template bindings
         tab_overview: *adw.TabOverview,
         tab_bar: *adw.TabBar,
         tab_view: *adw.TabView,
         toolbar: *adw.ToolbarView,
         toast_overlay: *adw.ToastOverlay,
+        clock_label: *gtk.Label,
 
         pub var offset: c_int = 0;
     };
@@ -1117,6 +1121,41 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         self.syncAppearance();
+        self.syncClock();
+    }
+
+    /// Start or stop the clock timer based on fullscreen state.
+    fn syncClock(self: *Self) void {
+        const priv = self.private();
+        if (self.isFullscreen()) {
+            // Update immediately, then every 30 seconds
+            _ = updateClockLabel(self);
+            if (priv.clock_timer == 0) {
+                priv.clock_timer = glib.timeoutAdd(
+                    30_000,
+                    &updateClockLabel,
+                    self,
+                );
+            }
+        } else {
+            if (priv.clock_timer != 0) {
+                _ = glib.Source.remove(priv.clock_timer);
+                priv.clock_timer = 0;
+            }
+        }
+    }
+
+    fn updateClockLabel(ud: ?*anyopaque) callconv(.c) c_int {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
+        const priv = self.private();
+
+        // Get local time via GLib
+        const now = glib.DateTime.newNowLocal() orelse return 1;
+        defer now.unref();
+        const formatted = now.format("%H:%M") orelse return 1;
+        priv.clock_label.setLabel(formatted);
+        glib.free(formatted);
+        return 1; // keep timer
     }
 
     fn propMaximized(
@@ -1213,6 +1252,11 @@ pub const Window = extern struct {
         const priv = self.private();
 
         priv.command_palette.set(null);
+
+        if (priv.clock_timer != 0) {
+            _ = glib.Source.remove(priv.clock_timer);
+            priv.clock_timer = 0;
+        }
 
         if (priv.config) |v| {
             v.unref();
@@ -2075,6 +2119,7 @@ pub const Window = extern struct {
             class.bindTemplateChildPrivate("tab_view", .{});
             class.bindTemplateChildPrivate("toolbar", .{});
             class.bindTemplateChildPrivate("toast_overlay", .{});
+            class.bindTemplateChildPrivate("clock_label", .{});
 
             // Template Callbacks
             class.bindTemplateCallback("realize", &windowRealize);

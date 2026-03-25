@@ -115,13 +115,24 @@ template $GhosttyWindow: Adw.ApplicationWindow {
         [end]
         Gtk.Box {
           orientation: horizontal;
-          visible: bind $titlebar_style_is_tabs(template.titlebar-style) as <bool>;
+
+          Gtk.Label clock_label {
+            visible: bind template.fullscreened;
+            styles [
+              "dim-label",
+            ]
+
+            margin-start: 8;
+            margin-end: 8;
+            label: "";
+          }
 
           Gtk.ToggleButton {
             styles [
               "flat",
             ]
 
+            visible: bind $titlebar_style_is_tabs(template.titlebar-style) as <bool>;
             icon-name: "view-grid-symbolic";
             tooltip-text: _("View Open Tabs");
             active: bind tab_overview.open bidirectional;
@@ -134,6 +145,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
               "flat",
             ]
 
+            visible: bind $titlebar_style_is_tabs(template.titlebar-style) as <bool>;
             notify::active => $notify_menu_active();
             icon-name: "open-menu-symbolic";
             menu-model: main_menu;
@@ -142,6 +154,7 @@ template $GhosttyWindow: Adw.ApplicationWindow {
           }
 
           Gtk.WindowControls {
+            visible: bind $titlebar_style_is_tabs(template.titlebar-style) as <bool>;
             side: end;
           }
         }
