@@ -24,6 +24,7 @@ const Config = @import("config.zig").Config;
 const Application = @import("application.zig").Application;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
 const SplitTree = @import("split_tree.zig").SplitTree;
+const SurfaceScrolledWindow = @import("surface_scrolled_window.zig").SurfaceScrolledWindow;
 const Surface = @import("surface.zig").Surface;
 const Tab = @import("tab.zig").Tab;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
@@ -603,6 +604,188 @@ pub const Window = extern struct {
         assert(desired_pos < total);
 
         return tab_view.reorderPage(page, desired_pos) != 0;
+    }
+
+    /// Move the focused split pane to the given tab. If the source tab
+    /// becomes empty (no surfaces left) it is closed automatically.
+    /// The target tab receives the surface next to its active split.
+    pub fn moveSplitToTab(
+        self: *Self,
+        surface: *Surface,
+        tab_target: apprt.action.GotoTab,
+    ) bool {
+        const priv = self.private();
+        const tab_view = priv.tab_view;
+        const alloc = Application.default().allocator();
+        const total = tab_view.getNPages();
+
+        // Resolve the target tab index (GotoTab is 0-indexed for numeric values)
+        const target_idx: c_int = switch (tab_target) {
+            .previous => prev: {
+                const selected = tab_view.getSelectedPage() orelse return false;
+                const current = tab_view.getPagePosition(selected);
+                break :prev if (current > 0) current - 1 else total - 1;
+            },
+            .next => next: {
+                const selected = tab_view.getSelectedPage() orelse return false;
+                const current = tab_view.getPagePosition(selected);
+                break :next if (current < total - 1) current + 1 else 0;
+            },
+            .last => total - 1,
+            _ => |v| idx: {
+                const raw: c_int = @intFromEnum(v);
+                if (raw < 0 or raw >= total) return false;
+                break :idx raw;
+            },
+        };
+
+        // Get source tab and verify the surface is in it
+        const source_tab = ext.getAncestor(
+            Tab,
+            surface.as(gtk.Widget),
+        ) orelse return false;
+        const source_tree_widget = source_tab.getSplitTree();
+        const source_tree = source_tree_widget.getTree() orelse return false;
+
+        // Get target tab
+        const target_page = tab_view.getNthPage(target_idx);
+        const target_tab = gobject.ext.cast(Tab, target_page.getChild()) orelse return false;
+        if (source_tab == target_tab) return false;
+
+        // Find the surface's handle in the source tree
+        const handle: Surface.Tree.Node.Handle = handle: {
+            var it = source_tree.iterator();
+            while (it.next()) |entry| {
+                if (entry.view == surface) break :handle entry.handle;
+            }
+            return false;
+        };
+
+        // Determine if this is the only surface in the source tab
+        const source_is_single = source_tree.nodes.len == 1;
+
+        // Ref the surface to keep it alive during reparenting. The
+        // ref on the ScrolledWindow parent is needed because when the
+        // source tree rebuilds it will destroy the old widget hierarchy.
+        const scrolled_window = ext.getAncestor(
+            SurfaceScrolledWindow,
+            surface.as(gtk.Widget),
+        ) orelse return false;
+        const sw_widget = scrolled_window.as(gtk.Widget);
+        _ = sw_widget.as(gobject.Object).ref();
+        defer sw_widget.as(gobject.Object).unref();
+
+        // Detach the scrolled window from its current parent so the
+        // source tree rebuild doesn't destroy it. Mirrors the
+        // SplitTree.detachWidget pattern for Paned and Bin parents.
+        if (sw_widget.getParent()) |parent| {
+            if (gobject.ext.cast(gtk.Paned, parent)) |paned| {
+                if (paned.getStartChild() == sw_widget) {
+                    paned.setStartChild(null);
+                } else if (paned.getEndChild() == sw_widget) {
+                    paned.setEndChild(null);
+                }
+            } else if (gobject.ext.cast(adw.Bin, parent)) |bin| {
+                if (bin.getChild() == sw_widget) {
+                    bin.setChild(null);
+                }
+            } else {
+                sw_widget.unparent();
+            }
+        }
+
+        if (!source_is_single) {
+            // Remove surface from source tree (creates new tree without it)
+            var new_source = source_tree.remove(
+                alloc,
+                handle,
+            ) catch |err| {
+                log.warn("unable to remove surface from tree: {}", .{err});
+                return false;
+            };
+            defer new_source.deinit();
+            source_tree_widget.setTree(&new_source);
+        } else {
+            // Source had only one surface - close the tab
+            source_tree_widget.setTree(null);
+            tab_view.closePage(tab_view.getPage(source_tab.as(gtk.Widget)));
+        }
+
+        // Now add the surface to the target tab's tree.
+        const target_tree_widget = target_tab.getSplitTree();
+        const target_tree = target_tree_widget.getTree();
+
+        if (target_tree == null or target_tree.?.isEmpty()) {
+            // Target tab is empty - create a single-node tree
+            var arena = std.heap.ArenaAllocator.init(alloc);
+            const nodes = arena.allocator().alloc(
+                Surface.Tree.Node,
+                1,
+            ) catch |err| {
+                log.warn("unable to allocate tree node: {}", .{err});
+                arena.deinit();
+                return false;
+            };
+            nodes[0] = .{ .leaf = surface };
+            var new_target: Surface.Tree = .{
+                .arena = arena,
+                .nodes = nodes,
+                .zoomed = null,
+            };
+            defer new_target.deinit();
+            target_tree_widget.setTree(&new_target);
+        } else {
+            // Target has surfaces - split at the active position to
+            // insert our surface alongside it
+            // Find the active surface handle in the target tree, falling
+            // back to root if nothing is focused
+            const active_handle: Surface.Tree.Node.Handle = active: {
+                const active_surface = target_tree_widget.getActiveSurface() orelse
+                    break :active .root;
+                var it = target_tree.?.iterator();
+                while (it.next()) |entry| {
+                    if (entry.view == active_surface) break :active entry.handle;
+                }
+                break :active .root;
+            };
+
+            // Create a single-leaf tree for the surface we're inserting
+            var insert_arena = std.heap.ArenaAllocator.init(alloc);
+            const insert_nodes = insert_arena.allocator().alloc(
+                Surface.Tree.Node,
+                1,
+            ) catch |err| {
+                log.warn("unable to allocate insert node: {}", .{err});
+                insert_arena.deinit();
+                return false;
+            };
+            insert_nodes[0] = .{ .leaf = surface };
+            var insert_tree: Surface.Tree = .{
+                .arena = insert_arena,
+                .nodes = insert_nodes,
+                .zoomed = null,
+            };
+            defer insert_tree.deinit();
+
+            var new_target = target_tree.?.split(
+                alloc,
+                active_handle,
+                .right,
+                0.5,
+                &insert_tree,
+            ) catch |err| {
+                log.warn("unable to split target tree: {}", .{err});
+                return false;
+            };
+            defer new_target.deinit();
+            target_tree_widget.setTree(&new_target);
+        }
+
+        // Switch to the target tab and focus the surface
+        tab_view.setSelectedPage(tab_view.getNthPage(target_idx));
+        surface.grabFocus();
+
+        return true;
     }
 
     pub fn toggleTabOverview(self: *Self) void {

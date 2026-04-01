@@ -613,6 +613,10 @@ pub const Action = union(enum) {
     /// Focus follows the originally focused view.
     swap_split: SplitFocusDirection,
 
+    /// Move the focused split pane to the given tab (zero-indexed).
+    /// If the source tab becomes empty it is closed automatically.
+    move_split_to_tab: isize,
+
     /// Focus on either the previous window or the next one ('previous', 'next')
     goto_window: GotoWindow,
 
@@ -1394,6 +1398,7 @@ pub const Action = union(enum) {
             .new_split,
             .goto_split,
             .swap_split,
+            .move_split_to_tab,
             .goto_window,
             .toggle_split_zoom,
             .toggle_readonly,

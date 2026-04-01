@@ -142,6 +142,10 @@ pub const Action = union(Key) {
     /// Swap the focused split with the one in the given direction.
     swap_split: GotoSplit,
 
+    /// Move the focused split to the given tab. If the tab doesn't exist,
+    /// nothing happens. The source tab is closed if it becomes empty.
+    move_split_to_tab: GotoTab,
+
     /// Jump to next/previous window.
     goto_window: GotoWindow,
 
@@ -366,6 +370,7 @@ pub const Action = union(Key) {
         goto_tab,
         goto_split,
         swap_split,
+        move_split_to_tab,
         goto_window,
         resize_split,
         equalize_splits,

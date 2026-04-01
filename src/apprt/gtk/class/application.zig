@@ -691,6 +691,8 @@ pub const Application = extern struct {
 
             .swap_split => return Action.swapSplit(target, value),
 
+            .move_split_to_tab => return Action.moveSplitToTab(target, value),
+
             .goto_window => return Action.gotoWindow(value),
 
             .goto_tab => return Action.gotoTab(target, value),
@@ -2061,6 +2063,24 @@ const Action = struct {
                     .left => .{ .spatial = .left },
                     .right => .{ .spatial = .right },
                 });
+            },
+        }
+    }
+
+    pub fn moveSplitToTab(
+        target: apprt.Target,
+        tab: apprt.action.GotoTab,
+    ) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |core| {
+                const surface = core.rt_surface.surface;
+                const window = ext.getAncestor(
+                    Window,
+                    surface.as(gtk.Widget),
+                ) orelse return false;
+
+                return window.moveSplitToTab(surface, tab);
             },
         }
     }

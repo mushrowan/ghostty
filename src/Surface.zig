@@ -5534,6 +5534,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             },
         ),
 
+        .move_split_to_tab => |tab_idx| return try self.rt_app.performAction(
+            .{ .surface = self },
+            .move_split_to_tab,
+            @enumFromInt(std.math.cast(c_int, tab_idx) orelse return false),
+        ),
+
         .goto_window => |direction| return try self.rt_app.performAction(
             .{ .surface = self },
             .goto_window,
