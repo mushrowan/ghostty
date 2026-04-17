@@ -637,6 +637,17 @@ pub const Action = union(enum) {
     ///     process is not running
     toggle_readonly,
 
+    /// Toggle keybind lock for the current surface.
+    ///
+    /// When keybind lock is active, all keybindings are ignored and passed
+    /// through to the terminal, except for the keybind that triggers
+    /// `toggle_keybind_lock` itself. Pressing that keybind again will
+    /// unlock and restore normal keybind processing.
+    ///
+    /// This is useful when running terminal applications whose own
+    /// keybindings conflict with Ghostty's.
+    toggle_keybind_lock,
+
     /// Resize the current split in the specified direction and amount in
     /// pixels. The two arguments should be joined with a comma (`,`),
     /// like in `resize_split:up,10`.
@@ -1402,6 +1413,7 @@ pub const Action = union(enum) {
             .goto_window,
             .toggle_split_zoom,
             .toggle_readonly,
+            .toggle_keybind_lock,
             .resize_split,
             .equalize_splits,
             .inspector,

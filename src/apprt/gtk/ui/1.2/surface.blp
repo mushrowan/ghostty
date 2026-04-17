@@ -110,6 +110,36 @@ Overlay terminal_page {
   }
 
   [overlay]
+  Revealer {
+    reveal-child: bind template.keybind-lock;
+    transition-type: crossfade;
+    transition-duration: 500;
+    can-focus: false;
+    can-target: false;
+    focusable: false;
+
+    Box keybind_lock_overlay {
+      styles [
+        "keybind_lock_overlay",
+      ]
+
+      has-tooltip: true;
+      tooltip-text: _("Keybind lock is active. All keybindings are passed through to the terminal. Press the lock keybind again to unlock.");
+      halign: end;
+      valign: start;
+      spacing: 6;
+
+      Image {
+        icon-name: "system-lock-screen-symbolic";
+      }
+
+      Label {
+        label: _("Keybind Lock");
+      }
+    }
+  }
+
+  [overlay]
   ProgressBar progress_bar_overlay {
     styles [
       "osd",

@@ -768,6 +768,7 @@ pub const Application = extern struct {
             .show_on_screen_keyboard => return Action.showOnScreenKeyboard(target),
             .command_finished => return Action.commandFinished(target, value),
             .readonly => return Action.setReadonly(target, value),
+            .keybind_lock => return Action.setKeybindLock(target, value),
 
             .start_search => Action.startSearch(target, value),
             .end_search => Action.endSearch(target),
@@ -2850,6 +2851,15 @@ const Action = struct {
             .app => return false,
             .surface => |surface| {
                 return surface.rt_surface.gobj().setReadonly(value);
+            },
+        }
+    }
+
+    pub fn setKeybindLock(target: apprt.Target, value: apprt.Action.Value(.keybind_lock)) bool {
+        switch (target) {
+            .app => return false,
+            .surface => |surface| {
+                return surface.rt_surface.gobj().setKeybindLock(value);
             },
         }
     }

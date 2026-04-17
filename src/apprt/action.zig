@@ -345,6 +345,9 @@ pub const Action = union(Key) {
     /// The readonly state of the surface has changed.
     readonly: Readonly,
 
+    /// The keybind lock state of the surface has changed.
+    keybind_lock: KeybindLock,
+
     /// Copy the effective title of the surface to the clipboard.
     /// The effective title is the user-overridden title if set,
     /// otherwise the terminal-set title.
@@ -418,6 +421,7 @@ pub const Action = union(Key) {
         search_total,
         search_selected,
         readonly,
+        keybind_lock,
         copy_title_to_clipboard,
 
         test "ghostty.h Action.Key" {
@@ -634,6 +638,15 @@ pub const Readonly = enum(c_int) {
 
     test "ghostty.h Readonly" {
         try lib.checkGhosttyHEnum(Readonly, "GHOSTTY_READONLY_");
+    }
+};
+
+pub const KeybindLock = enum(c_int) {
+    off,
+    on,
+
+    test "ghostty.h KeybindLock" {
+        try lib.checkGhosttyHEnum(KeybindLock, "GHOSTTY_KEYBIND_LOCK_");
     }
 };
 

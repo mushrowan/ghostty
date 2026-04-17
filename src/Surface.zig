@@ -163,6 +163,10 @@ selection_scroll_active: bool = false,
 /// always enabled in this state.
 readonly: bool = false,
 
+/// True when keybind lock is active. When locked, all keybindings are
+/// passed through to the terminal except for toggle_keybind_lock itself.
+keybind_locked: bool = false,
+
 /// Used to send notifications that long running commands have finished.
 /// Requires that shell integration be active. Should represent a nanosecond
 /// precision timestamp. It does not necessarily need to correspond to the
@@ -2897,6 +2901,24 @@ fn maybeHandleBinding(
             return null;
     };
 
+    // If keybind lock is active, only allow toggle_keybind_lock through.
+    // Everything else is passed through to the terminal as if no binding
+    // existed. This must be checked before leader/leaf processing so that
+    // sequence leaders are also bypassed when locked.
+    if (self.keybind_locked) {
+        const is_unlock = switch (entry.value_ptr.*) {
+            .leader => false,
+            inline .leaf, .leaf_chained => |leaf| blk: {
+                const generic = leaf.generic();
+                for (generic.actionsSlice()) |action| {
+                    if (action == .toggle_keybind_lock) break :blk true;
+                }
+                break :blk false;
+            },
+        };
+        if (!is_unlock) return null;
+    }
+
     // Determine if this entry has an action or if its a leader key.
     const leaf: input.Binding.Set.GenericLeaf = switch (entry.value_ptr.*) {
         .leader => |set| {
@@ -5581,6 +5603,16 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                 .{ .surface = self },
                 .readonly,
                 if (self.readonly) .on else .off,
+            );
+            return true;
+        },
+
+        .toggle_keybind_lock => {
+            self.keybind_locked = !self.keybind_locked;
+            _ = try self.rt_app.performAction(
+                .{ .surface = self },
+                .keybind_lock,
+                if (self.keybind_locked) .on else .off,
             );
             return true;
         },

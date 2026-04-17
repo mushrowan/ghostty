@@ -421,6 +421,25 @@ pub const Surface = extern struct {
                 },
             );
         };
+
+        pub const @"keybind-lock" = struct {
+            pub const name = "keybind-lock";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .default = false,
+                    .accessor = gobject.ext.typedAccessor(
+                        Self,
+                        bool,
+                        .{
+                            .getter = getKeybindLock,
+                        },
+                    ),
+                },
+            );
+        };
     };
 
     pub const signals = struct {
@@ -1175,6 +1194,20 @@ pub const Surface = extern struct {
     /// Notify anyone interested that the readonly status has changed.
     pub fn setReadonly(self: *Self, _: apprt.Action.Value(.readonly)) bool {
         self.as(gobject.Object).notifyByPspec(properties.readonly.impl.param_spec);
+
+        return true;
+    }
+
+    /// Get the keybind lock state from the core surface.
+    pub fn getKeybindLock(self: *Self) bool {
+        const priv: *Private = self.private();
+        const surface = priv.core_surface orelse return false;
+        return surface.keybind_locked;
+    }
+
+    /// Notify anyone interested that the keybind lock status has changed.
+    pub fn setKeybindLock(self: *Self, _: apprt.Action.Value(.keybind_lock)) bool {
+        self.as(gobject.Object).notifyByPspec(properties.@"keybind-lock".impl.param_spec);
 
         return true;
     }
@@ -3604,6 +3637,7 @@ pub const Surface = extern struct {
                 properties.zoom.impl,
                 properties.@"is-split".impl,
                 properties.readonly.impl,
+                properties.@"keybind-lock".impl,
 
                 // For Gtk.Scrollable
                 properties.hadjustment.impl,

@@ -144,6 +144,15 @@ label.resize-overlay {
   outline-style: solid;
   outline-width: 1px;
 }
+
+.surface .keybind_lock_overlay {
+  color: hsl(210 50 75);
+  padding: 8px 8px 8px 8px;
+  margin: 8px 8px 8px 8px;
+  border-radius: 6px 6px 6px 6px;
+  outline-style: solid;
+  outline-width: 1px;
+}
 /*
  * Command Palette
  */

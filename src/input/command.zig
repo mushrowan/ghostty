@@ -564,6 +564,12 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Toggle read-only mode for the current surface.",
         }},
 
+        .toggle_keybind_lock => comptime &.{.{
+            .action = .toggle_keybind_lock,
+            .title = "Toggle Keybind Lock",
+            .description = "Lock or unlock all keybindings, passing keys through to the terminal.",
+        }},
+
         .equalize_splits => comptime &.{.{
             .action = .equalize_splits,
             .title = "Equalize Splits",
