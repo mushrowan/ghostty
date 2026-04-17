@@ -1206,8 +1206,17 @@ pub const Surface = extern struct {
     }
 
     /// Notify anyone interested that the keybind lock status has changed.
-    pub fn setKeybindLock(self: *Self, _: apprt.Action.Value(.keybind_lock)) bool {
+    /// Also toggles GTK application accelerators: clearing them when locked
+    /// so key events reach the surface instead of firing GActions, and
+    /// restoring them when unlocked.
+    pub fn setKeybindLock(self: *Self, value: apprt.Action.Value(.keybind_lock)) bool {
         self.as(gobject.Object).notifyByPspec(properties.@"keybind-lock".impl.param_spec);
+
+        const app = Application.default();
+        switch (value) {
+            .on => app.clearActionAccelerators(),
+            .off => app.syncActionAccelerators(),
+        }
 
         return true;
     }
@@ -2744,6 +2753,16 @@ pub const Surface = extern struct {
 
         const ctx = priv.im_context.as(gtk.IMContext);
         if (focused) ctx.focusIn() else ctx.focusOut();
+
+        // When gaining focus, sync accelerators to match this surface's
+        // keybind lock state. Without this, switching from a locked surface
+        // to an unlocked one (or vice versa) would leave accels in the
+        // wrong state.
+        if (focused) {
+            const app = Application.default();
+            const locked = if (priv.core_surface) |surface| surface.keybind_locked else false;
+            if (locked) app.clearActionAccelerators() else app.syncActionAccelerators();
+        }
 
         _ = glib.idleAddOnce(idleFocus, self.ref());
         self.as(gobject.Object).notifyByPspec(properties.focused.impl.param_spec);

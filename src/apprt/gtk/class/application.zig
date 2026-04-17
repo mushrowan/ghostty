@@ -1141,31 +1141,58 @@ pub const Application = extern struct {
         }
     }
 
-    fn syncActionAccelerators(self: *Self) void {
-        self.syncActionAccelerator("app.quit", .{ .quit = {} });
-        self.syncActionAccelerator("app.open-config", .{ .open_config = {} });
-        self.syncActionAccelerator("app.reload-config", .{ .reload_config = {} });
-        self.syncActionAccelerator("win.toggle-inspector", .{ .inspector = .toggle });
-        self.syncActionAccelerator("app.show-gtk-inspector", .show_gtk_inspector);
-        self.syncActionAccelerator("win.toggle-command-palette", .toggle_command_palette);
-        self.syncActionAccelerator("win.close", .{ .close_window = {} });
-        self.syncActionAccelerator("win.new-window", .{ .new_window = {} });
-        self.syncActionAccelerator("win.new-tab", .{ .new_tab = {} });
-        self.syncActionAccelerator("win.close-tab::this", .{ .close_tab = .this });
-        self.syncActionAccelerator("tab.close::this", .{ .close_tab = .this });
-        self.syncActionAccelerator("win.split-right", .{ .new_split = .right });
-        self.syncActionAccelerator("win.split-down", .{ .new_split = .down });
-        self.syncActionAccelerator("win.split-left", .{ .new_split = .left });
-        self.syncActionAccelerator("win.split-up", .{ .new_split = .up });
-        self.syncActionAccelerator("win.copy", .{ .copy_to_clipboard = .mixed });
-        self.syncActionAccelerator("win.paste", .{ .paste_from_clipboard = {} });
-        self.syncActionAccelerator("win.reset", .{ .reset = {} });
-        self.syncActionAccelerator("win.clear", .{ .clear_screen = {} });
-        self.syncActionAccelerator("win.prompt-title", .{ .prompt_surface_title = {} });
-        self.syncActionAccelerator("split-tree.new-split::left", .{ .new_split = .left });
-        self.syncActionAccelerator("split-tree.new-split::right", .{ .new_split = .right });
-        self.syncActionAccelerator("split-tree.new-split::up", .{ .new_split = .up });
-        self.syncActionAccelerator("split-tree.new-split::down", .{ .new_split = .down });
+    const AccelEntry = struct {
+        gtk_action: [:0]const u8,
+        binding_action: input.Binding.Action,
+    };
+
+    /// All GTK actions that have keyboard accelerators. Shared between
+    /// syncActionAccelerators and clearActionAccelerators to avoid the
+    /// lists drifting apart.
+    const accel_entries = [_]AccelEntry{
+        .{ .gtk_action = "app.quit", .binding_action = .{ .quit = {} } },
+        .{ .gtk_action = "app.open-config", .binding_action = .{ .open_config = {} } },
+        .{ .gtk_action = "app.reload-config", .binding_action = .{ .reload_config = {} } },
+        .{ .gtk_action = "win.toggle-inspector", .binding_action = .{ .inspector = .toggle } },
+        .{ .gtk_action = "app.show-gtk-inspector", .binding_action = .show_gtk_inspector },
+        .{ .gtk_action = "win.toggle-command-palette", .binding_action = .toggle_command_palette },
+        .{ .gtk_action = "win.close", .binding_action = .{ .close_window = {} } },
+        .{ .gtk_action = "win.new-window", .binding_action = .{ .new_window = {} } },
+        .{ .gtk_action = "win.new-tab", .binding_action = .{ .new_tab = {} } },
+        .{ .gtk_action = "win.close-tab::this", .binding_action = .{ .close_tab = .this } },
+        .{ .gtk_action = "tab.close::this", .binding_action = .{ .close_tab = .this } },
+        .{ .gtk_action = "win.split-right", .binding_action = .{ .new_split = .right } },
+        .{ .gtk_action = "win.split-down", .binding_action = .{ .new_split = .down } },
+        .{ .gtk_action = "win.split-left", .binding_action = .{ .new_split = .left } },
+        .{ .gtk_action = "win.split-up", .binding_action = .{ .new_split = .up } },
+        .{ .gtk_action = "win.copy", .binding_action = .{ .copy_to_clipboard = .mixed } },
+        .{ .gtk_action = "win.paste", .binding_action = .{ .paste_from_clipboard = {} } },
+        .{ .gtk_action = "win.reset", .binding_action = .{ .reset = {} } },
+        .{ .gtk_action = "win.clear", .binding_action = .{ .clear_screen = {} } },
+        .{ .gtk_action = "win.prompt-title", .binding_action = .{ .prompt_surface_title = {} } },
+        .{ .gtk_action = "split-tree.new-split::left", .binding_action = .{ .new_split = .left } },
+        .{ .gtk_action = "split-tree.new-split::right", .binding_action = .{ .new_split = .right } },
+        .{ .gtk_action = "split-tree.new-split::up", .binding_action = .{ .new_split = .up } },
+        .{ .gtk_action = "split-tree.new-split::down", .binding_action = .{ .new_split = .down } },
+    };
+
+    pub fn syncActionAccelerators(self: *Self) void {
+        for (&accel_entries) |entry| {
+            self.syncActionAccelerator(entry.gtk_action, entry.binding_action);
+        }
+    }
+
+    /// Clear all GTK action accelerators. Used when keybind lock is active
+    /// on the focused surface. GTK application accelerators fire during the
+    /// capture phase before widget-level key event controllers, so they
+    /// bypass the keybind lock check in Surface.keyCallback. Clearing
+    /// them lets the key events fall through to the surface instead.
+    pub fn clearActionAccelerators(self: *Self) void {
+        const gtk_app = self.as(gtk.Application);
+        const zero = [_:null]?[*:0]const u8{};
+        for (&accel_entries) |entry| {
+            gtk_app.setAccelsForAction(entry.gtk_action, &zero);
+        }
     }
 
     fn syncActionAccelerator(
